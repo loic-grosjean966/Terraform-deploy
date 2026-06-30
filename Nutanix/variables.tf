@@ -42,6 +42,37 @@ variable nutanix_subnet_uuid {
   type        = string
 }
 
+variable nutanix_storage_container_uuid {
+  description = "UUID du conteneur de stockage Nutanix"
+  type        = string
+}
+
+variable subnet_ext_id {
+  description = "UUID du subnet à utiliser par les VMs"
+  type        = string
+  default     = ""
+}
+
+variable existing_subnet_ext_id {
+  description = "UUID du subnet VLAN existant à réutiliser"
+  type        = string
+  default     = ""
+}
+
+variable vms {
+  description = "Map of Nutanix VMs to create"
+  type = map(object({
+    description          = optional(string, "Machine virtuelle Nutanix")
+    num_cores_per_socket = optional(number, 2)
+    num_sockets          = optional(number, 1)
+    memory_size_bytes    = optional(number, 8 * pow(1024, 3))
+    disk_size_bytes      = optional(number, 20 * pow(1024, 3))
+    power_state          = optional(string, "ON")
+    boot_order           = optional(list(string), ["NETWORK", "DISK", "CDROM"])
+  }))
+  default = {}
+}
+
 variable vm_name {
   description = "Name of the virtual machine"
   type        = string

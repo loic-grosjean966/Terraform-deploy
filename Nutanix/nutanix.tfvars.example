@@ -1,0 +1,23 @@
+# Exemple de fichier de variables locales pour Nutanix
+# Copiez ce fichier en nutanix.tfvars et renseignez vos vraies valeurs.
+
+nutanix_image_uuid = "11111111-2222-3333-4444-555555555555"
+nutanix_username   = "your-username"
+nutanix_password   = "your-password"
+nutanix_endpoint   = "https://your-prism-endpoint:9440"
+nutanix_cluster_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+nutanix_subnet_uuid  = "ffffffff-0000-1111-2222-333333333333"
+existing_subnet_ext_id = "44444444-5555-6666-7777-888888888888"
+nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+nutanix_port       = 9440
+nutanix_insecure   = true
+vm_name           = "vm-demo"
+
+vms = {
+  HDVDEVOPS = {
+    description = "Machine virtuelle sous Linux pour Intranet DevOps"
+  }
+  HDVDEVOPS2 = {
+    description = "Deuxième machine virtuelle Nutanix"
+  }
+}
