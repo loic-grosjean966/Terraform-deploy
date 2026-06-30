@@ -64,3 +64,9 @@ variable "boot_order" {
   type        = list(string)
   default     = ["NETWORK", "DISK", "CDROM"]
 }
+
+variable "virtio_iso_ext_id" {
+  description = "UUID de l'image ISO VirtIO"
+  type        = string
+  default     = ""
+}

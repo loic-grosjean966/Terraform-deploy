@@ -35,6 +35,32 @@ resource "nutanix_virtual_machine_v2" "this" {
       }
     }
   }
+  disks{
+    disk_address {
+      bus_type = "VIRTIO"
+      index    = 1
+    }
+  
+    
+
+    backing_info {
+      vm_disk {
+        disk_size_bytes = var.disk_size_bytes
+
+        data_source {
+          reference {
+            image_reference {
+              image_ext_id = var.image_ext_id
+            }
+          }
+        }
+
+        storage_container {
+          ext_id = var.storage_container_ext_id
+        }
+      }
+    }
+  }
 
   boot_config {
     uefi_boot {
