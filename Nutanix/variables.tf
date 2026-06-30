@@ -59,6 +59,12 @@ variable existing_subnet_ext_id {
   default     = ""
 }
 
+variable dev_subnet_ext_id {
+  description = "UUID du subnet VLAN de développement à réutiliser"
+  type        = string
+  default     = ""
+}
+
 variable vms {
   description = "Map of Nutanix VMs to create"
   type = map(object({

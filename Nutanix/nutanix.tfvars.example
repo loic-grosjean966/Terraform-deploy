@@ -8,6 +8,7 @@ nutanix_endpoint   = "https://your-prism-endpoint:9440"
 nutanix_cluster_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 nutanix_subnet_uuid  = "ffffffff-0000-1111-2222-333333333333"
 existing_subnet_ext_id = "44444444-5555-6666-7777-888888888888"
+dev_subnet_ext_id = "66666666-7777-8888-9999-aaaaaaaaaaaa"
 nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd"
 nutanix_port       = 9440
 nutanix_insecure   = true
