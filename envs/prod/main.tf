@@ -1,9 +1,9 @@
 module "vms" {
   for_each = var.vms
 
-  source = "./modules/vm"
+  source = "../../modules/vm"
 
-  name = each.key
+  name        = each.key
   description = each.value.description
 
   cluster_ext_id           = var.nutanix_cluster_uuid

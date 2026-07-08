@@ -14,15 +14,35 @@ Déploiement de VMs Linux sur Nutanix AHV avec Terraform (provider `nutanix/nuta
 
 ```text
 Terraform-deploy/
-└── Nutanix/
-    ├── nutanix_provider.tf   # Configuration du provider Nutanix
-    ├── variables.tf          # Variables globales
-    ├── main.tf               # Création des VMs
-    ├── network.tf            # Création du subnet VLAN
-    └── modules/
-        ├── vm/               # Module de création d'une VM
-        └── network/          # Module de création d'un subnet
+├── modules/
+│   ├── network/          # Module de création d'un subnet
+│   │   ├── versions.tf   # Contraintes de providers
+│   │   ├── variables.tf  # Paramètres du module
+│   │   ├── main.tf       # Ressources du subnet
+│   │   └── outputs.tf    # Valeurs exposées (ext_id, name)
+│   └── vm/               # Module de création d'une VM
+│       ├── versions.tf
+│       ├── variables.tf
+│       ├── main.tf
+│       └── outputs.tf
+└── envs/
+    ├── dev/
+    │   ├── backend.tf     # Backend local pour dev (terraform.tfstate)
+    │   ├── versions.tf    # Contraintes + configuration du provider Nutanix
+    │   ├── variables.tf   # Déclaration des variables
+    │   ├── main.tf        # Appelle les modules avec les paramètres dev
+    │   ├── outputs.tf     # Expose les valeurs dev
+    │   └── terraform.tfvars.example
+    └── prod/
+        ├── backend.tf     # Backend local pour prod (terraform.tfstate)
+        ├── versions.tf
+        ├── variables.tf
+        ├── main.tf        # Squelette à adapter (VLAN, réseau, VMs de prod)
+        ├── outputs.tf
+        └── terraform.tfvars.example
 ```
+
+Chaque environnement (`envs/dev`, `envs/prod`) est un état Terraform indépendant : on lance `terraform init/plan/apply` séparément dans chacun de ces dossiers. `envs/prod` est fourni en squelette avec des valeurs placeholder (VLAN ID, plage réseau, `vms` vide) à adapter avant le premier déploiement.
 
 ## Prérequis
 
@@ -33,7 +53,7 @@ Terraform-deploy/
 
 ## Configuration
 
-Créer un fichier `terraform.tfvars` dans le dossier `Nutanix/` :
+Créer un fichier `terraform.tfvars` dans le dossier de l'environnement voulu (`envs/dev/` ou `envs/prod/`), à partir du `terraform.tfvars.example` correspondant :
 
 ```hcl
 nutanix_username                = "admin"
@@ -76,20 +96,20 @@ vms = {
 
 ## Réseau créé
 
-Un subnet VLAN est créé automatiquement :
+Un subnet VLAN est créé automatiquement pour chaque environnement :
 
-| Paramètre | Valeur |
-| --- | --- |
-| Nom | `VLAN-DEVOPS` |
-| VLAN ID | `100` |
-| Réseau | `192.168.100.0/24` |
-| Passerelle | `192.168.100.1` |
-| Pool DHCP | `192.168.100.20 – 192.168.100.50` |
+| Paramètre | dev | prod |
+| --- | --- | --- |
+| Nom | `VLAN-DEVOPS` | `VLAN-PROD` |
+| VLAN ID | `100` | `200` (placeholder, à adapter) |
+| Réseau | `192.168.100.0/24` | `192.168.200.0/24` (placeholder, à adapter) |
+| Passerelle | `192.168.100.1` | `192.168.200.1` |
+| Pool DHCP | `192.168.100.20 – 192.168.100.50` | `192.168.200.20 – 192.168.200.50` |
 
 ## Déploiement
 
 ```bash
-cd Nutanix/
+cd envs/dev/   # ou envs/prod/
 
 # Initialiser les providers
 terraform init

@@ -2,11 +2,12 @@
 terraform {
   required_providers {
     nutanix = {
-      source = "nutanix/nutanix"
+      source  = "nutanix/nutanix"
       version = "2.4.2"
     }
   }
 }
+
 // Configuration du provider Nutanix
 provider "nutanix" {
   username     = var.nutanix_username
