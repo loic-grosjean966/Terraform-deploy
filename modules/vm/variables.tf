@@ -24,7 +24,7 @@ variable "num_sockets" {
 variable "memory_size_bytes" {
   description = "Mémoire RAM de la VM en octets"
   type        = number
-  default     = 8 * pow(1024, 3)
+  default     = 8589934592
 }
 
 variable "power_state" {
@@ -56,7 +56,7 @@ variable "storage_container_ext_id" {
 variable "disk_size_bytes" {
   description = "Taille du disque principal en octets"
   type        = number
-  default     = 20 * pow(1024, 3)
+  default     = 21474836480
 }
 
 variable "boot_order" {
