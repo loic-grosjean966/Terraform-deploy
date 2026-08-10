@@ -1,5 +1,5 @@
 resource "nutanix_virtual_machine_v2" "this" {
-  name = var.name
+  name        = var.name
   description = var.description
 
   num_cores_per_socket = var.num_cores_per_socket
@@ -35,7 +35,7 @@ resource "nutanix_virtual_machine_v2" "this" {
       }
     }
   }
- 
+
   boot_config {
     uefi_boot {
       boot_order = var.boot_order
