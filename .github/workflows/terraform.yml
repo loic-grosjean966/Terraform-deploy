@@ -1,8 +1,7 @@
 # Vérification du code OpenTofu du dépôt.
 #
-# - `fmt` est vérifié une seule fois sur l'ensemble du dépôt (modules + envs).
-# - `init -backend=false` + `validate` tournent pour chaque environnement (envs/dev, envs/prod)
-#   sans contacter Prism Central ni écrire de state.
+# - `fmt` et `validate` tournent sans contacter Prism Central ni écrire de state
+#   (`init -backend=false`).
 # - `plan` ne s'exécute que si les secrets Nutanix sont configurés sur le dépôt. Il nécessite un
 #   accès réseau à Prism Central : sur un runner GitHub hébergé, un Prism Central privé
 #   (ex. 172.20.0.200) est injoignable — utiliser un runner self-hosted dans ce cas.
@@ -21,9 +20,10 @@ permissions:
   contents: read
 
 jobs:
-  fmt:
-    name: 'Format'
+  validate:
+    name: 'Format & validate'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,27 +34,6 @@ jobs:
       - name: Tofu fmt
         run: tofu fmt -check -recursive
 
-  validate:
-    name: 'Validate (${{ matrix.environment }})'
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: [dev, prod]
-
-    defaults:
-      run:
-        shell: bash
-        working-directory: envs/${{ matrix.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
-
       # -backend=false : pas d'initialisation du backend, aucun state n'est créé.
       - name: Tofu init
         run: tofu init -backend=false -input=false
@@ -63,19 +42,9 @@ jobs:
         run: tofu validate -no-color
 
   plan:
-    name: 'Plan (${{ matrix.environment }})'
+    name: 'Plan'
     runs-on: ubuntu-latest
-    needs: [fmt, validate]
-
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: [dev, prod]
-
-    defaults:
-      run:
-        shell: bash
-        working-directory: envs/${{ matrix.environment }}
+    needs: validate
 
     env:
       TF_VAR_nutanix_username: ${{ secrets.NUTANIX_USERNAME }}

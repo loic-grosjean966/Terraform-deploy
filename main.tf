@@ -1,14 +1,14 @@
 module "vms" {
   for_each = var.vms
 
-  source = "../../modules/vm"
+  source = "./modules/vm"
 
   name        = each.key
   description = each.value.description
 
   cluster_ext_id           = var.nutanix_cluster_uuid
   image_ext_id             = var.nutanix_image_uuid
-  subnet_ext_id            = var.dev_subnet_ext_id != "" ? var.dev_subnet_ext_id : (var.existing_subnet_ext_id != "" ? var.existing_subnet_ext_id : (var.subnet_ext_id != "" ? var.subnet_ext_id : var.nutanix_subnet_uuid))
+  subnet_ext_id            = var.nutanix_subnet_uuid
   storage_container_ext_id = var.nutanix_storage_container_uuid
 
   num_cores_per_socket = each.value.num_cores_per_socket

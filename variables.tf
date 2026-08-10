@@ -38,31 +38,13 @@ variable "nutanix_image_uuid" {
 }
 
 variable "nutanix_subnet_uuid" {
-  description = "Nutanix subnet UUID"
+  description = "UUID du subnet existant utilisé par les VMs"
   type        = string
 }
 
 variable "nutanix_storage_container_uuid" {
   description = "UUID du conteneur de stockage Nutanix"
   type        = string
-}
-
-variable "subnet_ext_id" {
-  description = "UUID du subnet à utiliser par les VMs"
-  type        = string
-  default     = ""
-}
-
-variable "existing_subnet_ext_id" {
-  description = "UUID du subnet VLAN existant à réutiliser"
-  type        = string
-  default     = ""
-}
-
-variable "dev_subnet_ext_id" {
-  description = "UUID du subnet VLAN de développement à réutiliser"
-  type        = string
-  default     = ""
 }
 
 variable "vms" {
@@ -77,10 +59,4 @@ variable "vms" {
     boot_order           = optional(list(string), ["NETWORK", "DISK", "CDROM"])
   }))
   default = {}
-}
-
-variable "vm_name" {
-  description = "Name of the virtual machine"
-  type        = string
-  default     = "vm-demo"
 }
