@@ -1,48 +1,16 @@
-# This workflow installs the latest version of Terraform CLI and configures the Terraform CLI configuration file
-# with an API token for Terraform Cloud (app.terraform.io). On pull request events, this workflow will run
-# `terraform init`, `terraform fmt`, and `terraform plan` (speculative plan via Terraform Cloud). On push events
-# to the "main" branch, `terraform apply` will be executed.
+# Vérification du code OpenTofu du dépôt.
 #
-# Documentation for `hashicorp/setup-terraform` is located here: https://github.com/hashicorp/setup-terraform
+# - `fmt` est vérifié une seule fois sur l'ensemble du dépôt (modules + envs).
+# - `init -backend=false` + `validate` tournent pour chaque environnement (envs/dev, envs/prod)
+#   sans contacter Prism Central ni écrire de state.
+# - `plan` ne s'exécute que si les secrets Nutanix sont configurés sur le dépôt. Il nécessite un
+#   accès réseau à Prism Central : sur un runner GitHub hébergé, un Prism Central privé
+#   (ex. 172.20.0.200) est injoignable — utiliser un runner self-hosted dans ce cas.
 #
-# To use this workflow, you will need to complete the following setup steps.
-#
-# 1. Create a `main.tf` file in the root of this repository with the `remote` backend and one or more resources defined.
-#   Example `main.tf`:
-#     # The configuration for the `remote` backend.
-#     terraform {
-#       backend "remote" {
-#         # The name of your Terraform Cloud organization.
-#         organization = "example-organization"
-#
-#         # The name of the Terraform Cloud workspace to store Terraform state files in.
-#         workspaces {
-#           name = "example-workspace"
-#         }
-#       }
-#     }
-#
-#     # An example resource that does nothing.
-#     resource "null_resource" "example" {
-#       triggers = {
-#         value = "A example resource that does nothing!"
-#       }
-#     }
-#
-#
-# 2. Generate a Terraform Cloud user API token and store it as a GitHub secret (e.g. TF_API_TOKEN) on this repository.
-#   Documentation:
-#     - https://www.terraform.io/docs/cloud/users-teams-organizations/api-tokens.html
-#     - https://help.github.com/en/actions/configuring-and-managing-workflows/creating-and-storing-encrypted-secrets
-#
-# 3. Reference the GitHub secret in step using the `hashicorp/setup-terraform` GitHub Action.
-#   Example:
-#     - name: Setup Terraform
-#       uses: hashicorp/setup-terraform@v1
-#       with:
-#         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+# Aucun `apply` n'est exécuté ici : le backend est local, donc un state écrit en CI serait perdu
+# à la fin du job. Un apply automatisé nécessiterait d'abord un backend distant.
 
-name: 'Terraform'
+name: 'OpenTofu'
 
 on:
   push:
@@ -53,41 +21,88 @@ permissions:
   contents: read
 
 jobs:
-  terraform:
-    name: 'Terraform'
+  fmt:
+    name: 'Format'
     runs-on: ubuntu-latest
-    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Tofu fmt
+        run: tofu fmt -check -recursive
+
+  validate:
+    name: 'Validate (${{ matrix.environment }})'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+
     defaults:
       run:
         shell: bash
+        working-directory: envs/${{ matrix.environment }}
 
     steps:
-    # Checkout the repository to the GitHub Actions runner
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v1
-      with:
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
 
-    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
-    - name: Terraform Init
-      run: terraform init
+      # -backend=false : pas d'initialisation du backend, aucun state n'est créé.
+      - name: Tofu init
+        run: tofu init -backend=false -input=false
 
-    # Checks that all Terraform configuration files adhere to a canonical format
-    - name: Terraform Format
-      run: terraform fmt -check
+      - name: Tofu validate
+        run: tofu validate -no-color
 
-    # Generates an execution plan for Terraform
-    - name: Terraform Plan
-      run: terraform plan -input=false
+  plan:
+    name: 'Plan (${{ matrix.environment }})'
+    runs-on: ubuntu-latest
+    needs: [fmt, validate]
 
-      # On push to "main", build or change infrastructure according to Terraform configuration files
-      # Note: It is recommended to set up a required "strict" status check in your repository for "Terraform Cloud". See the documentation on "strict" required status checks for more information: https://help.github.com/en/github/administering-a-repository/types-of-required-status-checks
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/"main"' && github.event_name == 'push'
-      run: terraform apply -auto-approve -input=false
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: envs/${{ matrix.environment }}
+
+    env:
+      TF_VAR_nutanix_username: ${{ secrets.NUTANIX_USERNAME }}
+      TF_VAR_nutanix_password: ${{ secrets.NUTANIX_PASSWORD }}
+      TF_VAR_nutanix_endpoint: ${{ secrets.NUTANIX_ENDPOINT }}
+      TF_VAR_nutanix_cluster_uuid: ${{ secrets.NUTANIX_CLUSTER_UUID }}
+      TF_VAR_nutanix_image_uuid: ${{ secrets.NUTANIX_IMAGE_UUID }}
+      TF_VAR_nutanix_subnet_uuid: ${{ secrets.NUTANIX_SUBNET_UUID }}
+      TF_VAR_nutanix_storage_container_uuid: ${{ secrets.NUTANIX_STORAGE_CONTAINER_UUID }}
+
+    steps:
+      - name: Checkout
+        if: env.TF_VAR_nutanix_endpoint != ''
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        if: env.TF_VAR_nutanix_endpoint != ''
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Tofu init
+        if: env.TF_VAR_nutanix_endpoint != ''
+        run: tofu init -input=false
+
+      - name: Tofu plan
+        if: env.TF_VAR_nutanix_endpoint != ''
+        run: tofu plan -input=false -no-color
+
+      - name: Plan ignoré
+        if: env.TF_VAR_nutanix_endpoint == ''
+        run: echo "Secrets Nutanix non configurés — étape plan ignorée."
