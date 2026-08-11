@@ -42,7 +42,7 @@ Copier `terraform.tfvars.example` en `terraform.tfvars` et renseigner les vraies
 ```hcl
 nutanix_username               = "admin"
 nutanix_password               = "mot_de_passe"
-nutanix_endpoint               = "https://192.168.1.100:9440"
+nutanix_endpoint               = "192.168.1.100" # IP ou FQDN seul, sans https:// ni port
 nutanix_cluster_uuid           = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 nutanix_image_uuid             = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 nutanix_subnet_uuid            = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

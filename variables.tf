@@ -24,7 +24,9 @@ variable "nutanix_password" {
 }
 
 variable "nutanix_endpoint" {
-  description = "URL de Prism Central, VIP du cluster (ex. https://172.20.0.200:9440)"
+  # IP ou FQDN seul (ex. "172.20.0.200") : ni schéma https://, ni port — le port est
+  # passé séparément via nutanix_port. Une URL complète fait échouer les appels API.
+  description = "VIP du cluster Prism Central, sous forme d'IP ou de FQDN"
   type        = string
 }
 

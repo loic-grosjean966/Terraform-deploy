@@ -9,8 +9,11 @@
 #   - À deux personnes sur des postes différents, chacun a son propre state : les
 #     déploiements se marcheraient dessus. Pour travailler à plusieurs, passer à un
 #     backend distant (S3, Azure Storage, PostgreSQL...), qui gère aussi le verrouillage.
-#   - Le state contient les valeurs des variables sensibles EN CLAIR (mot de passe Prism
-#     Central inclus). À traiter comme un secret.
+#   - Le state est stocké en clair, sans chiffrement. Il ne contient pas les identifiants
+#     Prism Central (la configuration d'un provider n'est pas persistée), mais il décrit
+#     l'intégralité de l'infrastructure gérée : à traiter comme une donnée sensible.
+#   - Attention en revanche aux fichiers de plan sauvegardés (`tofu plan -out=tfplan`) :
+#     ceux-là contiennent bien les valeurs des variables, mot de passe compris.
 
 terraform {
   backend "local" {

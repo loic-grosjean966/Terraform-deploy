@@ -17,7 +17,9 @@ nutanix_username = "your-username"
 nutanix_password = "your-password"
 
 # VIP du cluster Prism Central — jamais l'adresse d'une CVM individuelle.
-nutanix_endpoint = "https://your-prism-endpoint:9440"
+# UNIQUEMENT l'IP ou le FQDN : pas de "https://", pas de port ici (il est
+# renseigné séparément ci-dessous). Une URL complète fait échouer les appels API.
+nutanix_endpoint = "prism.example.com"
 nutanix_port     = 9440
 
 # true tant que Prism Central utilise un certificat auto-signé.

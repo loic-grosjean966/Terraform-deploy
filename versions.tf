@@ -19,9 +19,11 @@ provider "nutanix" {
   username = var.nutanix_username
   password = var.nutanix_password
 
-  # URL de la VIP du cluster Prism Central. Ne jamais mettre l'adresse d'une CVM
-  # individuelle ni la "data services VIP" : les appels échoueraient lors des
-  # opérations de cycle de vie du cluster (upgrade AOS, etc.).
+  # VIP du cluster Prism Central, sous forme d'IP ou de FQDN uniquement (pas de
+  # "https://" ni de port : le port est passé par l'argument `port`).
+  # Ne jamais mettre l'adresse d'une CVM individuelle ni la "data services VIP" :
+  # les appels échoueraient lors des opérations de cycle de vie du cluster
+  # (upgrade AOS, etc.).
   endpoint = var.nutanix_endpoint
   port     = var.nutanix_port
   insecure = var.nutanix_insecure
