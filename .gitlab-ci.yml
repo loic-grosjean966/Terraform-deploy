@@ -1,0 +1,21 @@
+stages:
+  - init
+  - plan
+  - validate
+  - apply
+
+variables:
+  NUTANIX_USERNAME: "your_username"
+  NUTANIX_PASSWORD: "your_password"
+  NUTANIX_ENDPOINT: "https://your-nutanix-endpoint"
+  NUTANIX_CLUSTER_UUID: "your-cluster-uuid"
+
+init opentofu:
+  stage: init
+  script:
+    - opentofu init
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
