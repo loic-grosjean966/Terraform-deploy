@@ -4,6 +4,18 @@
 # Le provider Nutanix v2 impose des blocs très imbriqués : les commentaires ci-dessous
 # expliquent à quoi correspond chaque niveau.
 
+locals {
+  cloud_init_metadata = var.cloud_init_metadata != "" ? var.cloud_init_metadata : <<-EOT
+    instance-id: ${var.name}
+    local-hostname: ${lower(var.name)}
+  EOT
+
+  cloud_init_user_data = replace(templatefile("${path.module}/templates/user-data.yaml.tftpl", {
+    user     = var.cloud_init_user
+    ssh_keys = var.ssh_keys
+  }), "\r\n", "\n")
+}
+
 resource "nutanix_virtual_machine_v2" "this" {
   name        = var.name
   description = var.description
@@ -75,6 +87,26 @@ resource "nutanix_virtual_machine_v2" "this" {
         # ACCESS : la VM est dans le VLAN du subnet, sans tag 802.1Q à gérer
         # côté OS. (L'alternative, TRUNK, sert aux VMs qui gèrent plusieurs VLANs.)
         vlan_mode = "ACCESS"
+      }
+    }
+  }
+
+
+  # Personnalisation au premier boot via cloud-init. Bloc omis si aucune clé SSH
+  # n'est fournie : la VM serait inaccessible (lock_passwd + aucune clé).
+  dynamic "guest_customization" {
+    for_each = length(var.ssh_keys) > 0 ? [1] : []
+    content {
+      config {
+        cloud_init {
+          datasource_type = "CONFIG_DRIVE_V2"
+          metadata        = base64encode(local.cloud_init_metadata)
+          cloud_init_script {
+            user_data {
+              value = base64encode(local.cloud_init_user_data)
+            }
+          }
+        }
       }
     }
   }

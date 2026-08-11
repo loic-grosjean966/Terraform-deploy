@@ -91,6 +91,8 @@ variable "vms" {
     disk_size_bytes      = optional(number, 21474836480) # 20 Go — idem
     power_state          = optional(string, "ON")        # "ON" ou "OFF"
     boot_order           = optional(list(string), ["NETWORK", "DISK", "CDROM"])
+    ssh_keys             = optional(list(string), []) # clés SSH autorisées pour cloud_init
+    cloud_init_user      = optional(string, "ubuntu") # utilisateur créé par cloud-init, avec sudo NOPASSWD
   }))
 
   default = {}

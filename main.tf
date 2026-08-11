@@ -29,4 +29,7 @@ module "vms" {
   disk_size_bytes      = each.value.disk_size_bytes
   power_state          = each.value.power_state
   boot_order           = each.value.boot_order
+
+  ssh_keys        = each.value.ssh_keys
+  cloud_init_user = each.value.cloud_init_user
 }

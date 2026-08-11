@@ -16,7 +16,24 @@ variable "description" {
   type        = string
   default     = "Machine virtuelle Nutanix"
 }
+# --- Connexion via SSH -------------------------------------------------------------------
+variable "ssh_keys" {
+  description = "Liste des clés SSH autorisées pour se connecter à la VM"
+  type        = list(string)
+  default     = []
+}
+# --- Cloud-init ---------------------------------------------------------------------
+variable "cloud_init_user" {
+  description = "Nom de l'utilisateur créé par cloud-init"
+  type        = string
+  default     = "ubuntu"
+}
 
+variable "cloud_init_metadata" {
+  description = "Contenu du fichier cloud-init meta-data"
+  type        = string
+  default     = ""
+}
 # --- Gabarit (CPU / RAM / disque) -----------------------------------------------------
 
 variable "num_cores_per_socket" {
