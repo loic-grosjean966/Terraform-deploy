@@ -1,4 +1,10 @@
-// Déclaration du provider Nutanix
+# Provider Nutanix : version requise et paramètres de connexion à Prism Central.
+#
+# La version est volontairement figée (et non "~> 2.4") : le provider Nutanix a introduit
+# des ressources "_v2" qui remplacent les anciennes, et changer de version peut casser
+# la configuration. Pour monter de version : modifier le numéro ici, lancer
+# `tofu init -upgrade`, puis vérifier le `tofu plan` avant d'appliquer.
+
 terraform {
   required_providers {
     nutanix = {
@@ -8,12 +14,20 @@ terraform {
   }
 }
 
-// Configuration du provider Nutanix
+# Les valeurs viennent de terraform.tfvars (non versionné) — voir terraform.tfvars.example.
 provider "nutanix" {
-  username     = var.nutanix_username
-  password     = var.nutanix_password
-  endpoint     = var.nutanix_endpoint
-  port         = var.nutanix_port
-  insecure     = var.nutanix_insecure
+  username = var.nutanix_username
+  password = var.nutanix_password
+
+  # URL de la VIP du cluster Prism Central. Ne jamais mettre l'adresse d'une CVM
+  # individuelle ni la "data services VIP" : les appels échoueraient lors des
+  # opérations de cycle de vie du cluster (upgrade AOS, etc.).
+  endpoint = var.nutanix_endpoint
+  port     = var.nutanix_port
+  insecure = var.nutanix_insecure
+
+  # Délai d'attente maximal, en MINUTES, pour la création/modification d'une ressource.
+  # La création d'une VM avec clonage d'image peut être longue : augmenter si vous
+  # rencontrez des erreurs de timeout.
   wait_timeout = 10
 }

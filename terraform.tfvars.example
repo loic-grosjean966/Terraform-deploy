@@ -1,21 +1,55 @@
-# Exemple de fichier de variables locales pour Nutanix
-# Copiez ce fichier en terraform.tfvars et renseignez vos vraies valeurs.
+# MODÈLE de fichier de variables — à copier, pas à modifier directement :
+#
+#     cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars contient les identifiants Prism Central et n'est PAS versionné
+# (exclu par .gitignore). Ne jamais y mettre de vraies valeurs dans ce fichier-ci,
+# qui est committé.
+#
+# Où trouver les UUID ? Dans Prism Central, ouvrez l'entité : l'UUID est dans l'URL.
+# En SSH sur une CVM : `ncli cluster info`, `acli net.list`, `acli image.list`,
+# `ncli storagecontainer list`.
+# Attention à ne pas laisser d'espace parasite en début ou fin d'UUID au copier-coller.
 
-nutanix_username               = "your-username"
-nutanix_password               = "your-password"
-nutanix_endpoint               = "https://your-prism-endpoint:9440"
-nutanix_port                   = 9440
-nutanix_insecure               = true
-nutanix_cluster_uuid           = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-nutanix_image_uuid             = "11111111-2222-3333-4444-555555555555"
-nutanix_subnet_uuid            = "ffffffff-0000-1111-2222-333333333333"
-nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+# --- Connexion à Prism Central -------------------------------------------------------
+
+nutanix_username = "your-username"
+nutanix_password = "your-password"
+
+# VIP du cluster Prism Central — jamais l'adresse d'une CVM individuelle.
+nutanix_endpoint = "https://your-prism-endpoint:9440"
+nutanix_port     = 9440
+
+# true tant que Prism Central utilise un certificat auto-signé.
+nutanix_insecure = true
+
+# --- Entités Nutanix existantes (à référencer, elles ne sont pas créées ici) ----------
+
+nutanix_cluster_uuid           = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" # cluster d'exécution
+nutanix_image_uuid             = "11111111-2222-3333-4444-555555555555" # image OS à cloner
+nutanix_subnet_uuid            = "ffffffff-0000-1111-2222-333333333333" # subnet des VMs
+nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd" # stockage des disques
+
+# --- VMs à déployer -------------------------------------------------------------------
+#
+# La clé est le nom de la VM dans Nutanix. Les champs omis prennent les valeurs par
+# défaut (2 vCPU, 8 Go de RAM, 20 Go de disque, allumée) — voir variables.tf.
+#
+# ATTENTION : renommer une clé équivaut à détruire la VM puis à en recréer une autre.
 
 vms = {
   HDVDEVOPS = {
     description = "Machine virtuelle sous Linux pour Intranet DevOps"
   }
+
   HDVDEVOPS2 = {
     description = "Deuxième machine virtuelle Nutanix"
+
+    # Exemple de personnalisation du gabarit :
+    # num_sockets          = 2
+    # num_cores_per_socket = 4
+    # memory_size_bytes    = 17179869184 # 16 Go
+    # disk_size_bytes      = 53687091200 # 50 Go
+    # boot_order           = ["DISK", "NETWORK", "CDROM"]
   }
 }

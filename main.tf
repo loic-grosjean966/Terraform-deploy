@@ -1,9 +1,21 @@
+# Point d'entrée : création des machines virtuelles.
+#
+# Toute la logique de création d'une VM vit dans ./modules/vm. Ce fichier se contente
+# de l'appeler une fois par entrée de la variable `vms`, en lui passant les UUID des
+# entités Nutanix (cluster, image, subnet, conteneur de stockage).
+#
+# Pour ajouter ou retirer une VM, il ne faut PAS modifier ce fichier : il suffit
+# d'ajouter ou de retirer une entrée dans la map `vms` de terraform.tfvars.
+
 module "vms" {
+  # `for_each` crée une instance du module par entrée de la map. L'adresse de la
+  # ressource dans le state est donc module.vms["NOM-DE-LA-VM"], stable tant que la
+  # clé ne change pas — c'est ce qui permet d'ajouter une VM sans toucher aux autres.
   for_each = var.vms
 
   source = "./modules/vm"
 
-  name        = each.key
+  name        = each.key # la clé de la map est le nom de la VM
   description = each.value.description
 
   cluster_ext_id           = var.nutanix_cluster_uuid
