@@ -1,9 +1,11 @@
 # Provider Nutanix : version requise et paramètres de connexion à Prism Central.
 #
 # La version est volontairement figée (et non "~> 2.4") : le provider Nutanix a introduit
-# des ressources "_v2" qui remplacent les anciennes, et changer de version peut casser
-# la configuration. Pour monter de version : modifier le numéro ici, lancer
-# `tofu init -upgrade`, puis vérifier le `tofu plan` avant d'appliquer.
+# des ressources "_v2" (API v4) qui remplacent progressivement les anciennes, et changer
+# de version peut casser la configuration. Ce projet utilise volontairement les
+# ressources "classiques" (API v3, ex. nutanix_virtual_machine) plutôt que "_v2" — voir
+# modules/vm/main.tf pour le pourquoi. Pour monter de version : modifier le numéro ici,
+# lancer `tofu init -upgrade`, puis vérifier le `tofu plan` avant d'appliquer.
 
 terraform {
   required_providers {

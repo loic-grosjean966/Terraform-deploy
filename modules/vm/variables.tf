@@ -30,7 +30,7 @@ variable "cloud_init_user" {
 }
 
 variable "cloud_init_metadata" {
-  description = "Contenu du fichier cloud-init meta-data"
+  description = "Contenu du fichier cloud-init meta-data, en JSON strict (l'API Nutanix rejette le YAML ici). Vide = généré automatiquement depuis le nom de la VM."
   type        = string
   default     = ""
 }
@@ -66,12 +66,6 @@ variable "power_state" {
   default     = "ON"
 }
 
-variable "boot_order" {
-  description = "Ordre de démarrage UEFI. Mettre DISK en premier une fois l'OS installé pour éviter un démarrage réseau inutile."
-  type        = list(string)
-  default     = ["NETWORK", "DISK", "CDROM"]
-}
-
 # --- Références aux entités Nutanix existantes (UUID) ---------------------------------
 
 variable "cluster_ext_id" {
@@ -87,18 +81,4 @@ variable "image_ext_id" {
 variable "subnet_ext_id" {
   description = "UUID du subnet auquel rattacher la carte réseau"
   type        = string
-}
-
-variable "storage_container_ext_id" {
-  description = "UUID du conteneur de stockage hébergeant le disque"
-  type        = string
-}
-
-# Vestige de l'ancienne version du module, qui ajoutait un lecteur CD avec les pilotes
-# VirtIO pour les VMs Windows. Ce disque a été supprimé (les images Linux n'en ont pas
-# besoin) : cette variable n'est plus utilisée nulle part et peut être retirée.
-variable "virtio_iso_ext_id" {
-  description = "UUID de l'image ISO VirtIO (inutilisé)"
-  type        = string
-  default     = ""
 }

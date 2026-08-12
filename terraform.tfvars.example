@@ -7,8 +7,7 @@
 # qui est committé.
 #
 # Où trouver les UUID ? Dans Prism Central, ouvrez l'entité : l'UUID est dans l'URL.
-# En SSH sur une CVM : `ncli cluster info`, `acli net.list`, `acli image.list`,
-# `ncli storagecontainer list`.
+# En SSH sur une CVM : `ncli cluster info`, `acli net.list`, `acli image.list`.
 # Attention à ne pas laisser d'espace parasite en début ou fin d'UUID au copier-coller.
 
 # --- Connexion à Prism Central -------------------------------------------------------
@@ -27,16 +26,21 @@ nutanix_insecure = true
 
 # --- Entités Nutanix existantes (à référencer, elles ne sont pas créées ici) ----------
 
-nutanix_cluster_uuid           = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" # cluster d'exécution
-nutanix_image_uuid             = "11111111-2222-3333-4444-555555555555" # image OS à cloner
-nutanix_subnet_uuid            = "ffffffff-0000-1111-2222-333333333333" # subnet des VMs
-nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd" # stockage des disques
+nutanix_cluster_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" # cluster d'exécution
+nutanix_image_uuid   = "11111111-2222-3333-4444-555555555555" # image OS à cloner
+nutanix_subnet_uuid  = "ffffffff-0000-1111-2222-333333333333" # subnet des VMs
+
+# Pas de nutanix_storage_container_uuid : au clonage d'une image, Nutanix place le
+# disque dans le même conteneur que l'image source, sans que ce soit configurable.
 
 # --- VMs à déployer -------------------------------------------------------------------
 #
 # La clé est le nom de la VM dans Nutanix (et son hostname, en minuscules). Les champs
-# omis prennent les valeurs par défaut (2 vCPU, 8 Go de RAM, 20 Go de disque, allumée)
+# omis prennent les valeurs par défaut (2 vCPU, 8 Go de RAM, 40 Go de disque, allumée)
 # — voir variables.tf.
+#
+# Le disque prend d'abord la taille de l'image au clonage (l'API l'impose) ; un second
+# `tofu apply`, sans rien changer, l'agrandit ensuite à disk_size_bytes.
 #
 # ATTENTION : renommer une clé équivaut à détruire la VM puis à en recréer une autre.
 #
@@ -67,7 +71,6 @@ vms = {
     # num_cores_per_socket = 4
     # memory_size_bytes    = 17179869184 # 16 Go
     # disk_size_bytes      = 53687091200 # 50 Go
-    # boot_order           = ["DISK", "NETWORK", "CDROM"]
 
     # Compte créé par cloud-init. À adapter à la distribution de l'image :
     # "ubuntu" (défaut), "debian", "rocky", "almalinux", "cloud-user"...

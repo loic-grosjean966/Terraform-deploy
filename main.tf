@@ -2,7 +2,7 @@
 #
 # Toute la logique de création d'une VM vit dans ./modules/vm. Ce fichier se contente
 # de l'appeler une fois par entrée de la variable `vms`, en lui passant les UUID des
-# entités Nutanix (cluster, image, subnet, conteneur de stockage).
+# entités Nutanix (cluster, image, subnet).
 #
 # Pour ajouter ou retirer une VM, il ne faut PAS modifier ce fichier : il suffit
 # d'ajouter ou de retirer une entrée dans la map `vms` de terraform.tfvars.
@@ -18,17 +18,15 @@ module "vms" {
   name        = each.key # la clé de la map est le nom de la VM
   description = each.value.description
 
-  cluster_ext_id           = var.nutanix_cluster_uuid
-  image_ext_id             = var.nutanix_image_uuid
-  subnet_ext_id            = var.nutanix_subnet_uuid
-  storage_container_ext_id = var.nutanix_storage_container_uuid
+  cluster_ext_id = var.nutanix_cluster_uuid
+  image_ext_id   = var.nutanix_image_uuid
+  subnet_ext_id  = var.nutanix_subnet_uuid
 
   num_cores_per_socket = each.value.num_cores_per_socket
   num_sockets          = each.value.num_sockets
   memory_size_bytes    = each.value.memory_size_bytes
   disk_size_bytes      = each.value.disk_size_bytes
   power_state          = each.value.power_state
-  boot_order           = each.value.boot_order
 
   ssh_keys        = each.value.ssh_keys
   cloud_init_user = each.value.cloud_init_user

@@ -2,13 +2,18 @@
 
 Déploiement de VMs Linux sur Nutanix AHV avec OpenTofu / Terraform (provider `nutanix/nutanix` v2.4.2).
 
+Le module utilise la ressource `nutanix_virtual_machine` (API v3) plutôt que
+`nutanix_virtual_machine_v2` (API v4) : cette dernière fait échouer systématiquement la
+création côté serveur sur ce cluster ("Failed to perform the operation due to an internal
+error"), alors que Prism Central — qui s'appuie sur l'API v3 — crée les mêmes VMs sans
+problème.
+
 ## Fonctionnalités
 
 - Création de plusieurs VMs en parallèle via une map (`for_each`)
 - Rattachement des VMs à un subnet Nutanix existant
 - Personnalisation au premier démarrage via cloud-init : hostname, compte utilisateur et clés SSH
-- Configuration UEFI avec ordre de démarrage personnalisable
-- Disque système SCSI cloné depuis une image Nutanix
+- Démarrage UEFI, disque système cloné depuis une image Nutanix
 
 ## Structure du projet
 
@@ -18,7 +23,7 @@ Terraform-deploy/
 │   └── vm/                       # Module de création d'une VM
 │       ├── versions.tf           # Contraintes de providers
 │       ├── variables.tf          # Paramètres du module
-│       ├── main.tf               # Ressource nutanix_virtual_machine_v2
+│       ├── main.tf               # Ressource nutanix_virtual_machine (API v3)
 │       ├── outputs.tf            # Valeurs exposées (ext_id, name)
 │       └── templates/
 │           └── user-data.yaml.tftpl   # Gabarit cloud-init (user-data)
@@ -34,8 +39,9 @@ Terraform-deploy/
 
 - [OpenTofu](https://opentofu.org/) ou [Terraform](https://www.terraform.io/)
 - Accès à un cluster Nutanix AHV (Prism Central)
-- Un conteneur de stockage disponible
 - Un subnet existant auquel rattacher les VMs
+- Un conteneur de stockage sur le cluster (le disque des VMs y est placé automatiquement,
+  dans le même conteneur que l'image source — non configurable, voir plus bas)
 - Une image OS uploadée dans Nutanix, qui doit :
   - supporter le **démarrage UEFI** (le module force `uefi_boot`)
   - embarquer **cloud-init** — c'est lui qui applique la personnalisation. Les images
@@ -48,13 +54,12 @@ Terraform-deploy/
 Copier `terraform.tfvars.example` en `terraform.tfvars` et renseigner les vraies valeurs (ce fichier n'est pas versionné) :
 
 ```hcl
-nutanix_username               = "admin"
-nutanix_password               = "mot_de_passe"
-nutanix_endpoint               = "192.168.1.100" # IP ou FQDN seul, sans https:// ni port
-nutanix_cluster_uuid           = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-nutanix_image_uuid             = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-nutanix_subnet_uuid            = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-nutanix_storage_container_uuid = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+nutanix_username     = "admin"
+nutanix_password     = "mot_de_passe"
+nutanix_endpoint     = "192.168.1.100" # IP ou FQDN seul, sans https:// ni port
+nutanix_cluster_uuid = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+nutanix_image_uuid   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+nutanix_subnet_uuid  = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 vms = {
   "vm-01" = {
@@ -64,7 +69,6 @@ vms = {
     memory_size_bytes    = 8589934592  # 8 Go
     disk_size_bytes      = 21474836480 # 20 Go
     power_state          = "ON"
-    boot_order           = ["DISK", "NETWORK", "CDROM"]
     ssh_keys             = ["ssh-ed25519 AAAAC3Nza... vous@poste"]
   }
 }
@@ -85,7 +89,6 @@ La clé du dictionnaire (`"vm-01"`) sert à la fois de nom de VM dans Nutanix et
 | `nutanix_cluster_uuid` | UUID du cluster Nutanix | — |
 | `nutanix_image_uuid` | UUID de l'image OS | — |
 | `nutanix_subnet_uuid` | UUID du subnet existant utilisé par les VMs | — |
-| `nutanix_storage_container_uuid` | UUID du conteneur de stockage | — |
 | `vms` | Map des VMs à créer | `{}` |
 
 ### Paramètres par VM
@@ -98,11 +101,14 @@ Chaque entrée de la map `vms` accepte les champs suivants, tous optionnels :
 | `num_cores_per_socket` | Cœurs par socket | `2` |
 | `num_sockets` | Sockets CPU | `1` |
 | `memory_size_bytes` | RAM **en octets** | `8589934592` (8 Go) |
-| `disk_size_bytes` | Disque système **en octets** | `21474836480` (20 Go) |
+| `disk_size_bytes` | Disque système **en octets**. Ignoré au clonage (voir ci-dessous) | `42949672960` (40 Go) |
 | `power_state` | `ON` ou `OFF` | `ON` |
-| `boot_order` | Ordre de démarrage UEFI | `["NETWORK", "DISK", "CDROM"]` |
 | `ssh_keys` | Clés publiques SSH autorisées | `[]` |
 | `cloud_init_user` | Compte créé par cloud-init | `"ubuntu"` |
+
+> `disk_size_bytes` est ignoré par l'API Nutanix lors du clonage : le disque prend d'abord
+> la taille de l'image source. Un second `tofu apply`, sans rien changer, détecte l'écart
+> et agrandit le disque à la taille demandée.
 
 ## Personnalisation cloud-init
 
@@ -114,9 +120,9 @@ Prism Central de remonter l'IP de la VM). Le hostname est dérivé du nom de la 
 
 Trois points à connaître :
 
-- **Sans `ssh_keys`, aucune personnalisation n'est appliquée.** Le bloc `guest_customization`
-  est alors omis volontairement : le compte ayant `lock_passwd: true`, une VM sans clé serait
-  inaccessible. C'est donc le champ à ne pas oublier.
+- **Sans `ssh_keys`, aucune personnalisation n'est appliquée** (les attributs cloud-init
+  restent `null`) : le compte ayant `lock_passwd: true`, une VM sans clé serait de toute
+  façon inaccessible. C'est donc le champ à ne pas oublier.
 - **Cloud-init ne s'exécute qu'au premier démarrage.** Ajouter une clé dans la configuration
   ne la déploiera pas sur une VM existante, et en retirer une ne révoquera aucun accès. Pour
   gérer les accès dans la durée, il faut modifier `~/.ssh/authorized_keys` sur la VM, ou

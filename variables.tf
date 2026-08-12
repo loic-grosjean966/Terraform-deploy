@@ -6,8 +6,7 @@
 #
 # Où trouver les UUID ? Dans Prism Central, ouvrez l'entité concernée : l'UUID apparaît
 # dans l'URL de la page. En SSH sur une CVM : `ncli cluster info` (cluster),
-# `acli net.list` (subnets), `acli image.list` (images),
-# `ncli storagecontainer list` (conteneurs de stockage).
+# `acli net.list` (subnets), `acli image.list` (images).
 
 # --- Connexion à Prism Central -------------------------------------------------------
 
@@ -61,20 +60,24 @@ variable "nutanix_subnet_uuid" {
   type        = string
 }
 
-variable "nutanix_storage_container_uuid" {
-  description = "UUID du conteneur de stockage qui héberge les disques des VMs"
-  type        = string
-}
+# Pas de nutanix_storage_container_uuid : au clonage d'une image, Nutanix place
+# systématiquement le disque dans le même conteneur que l'image source, sans que ce
+# soit configurable (confirmé côté API v2 et v3, et dans l'assistant de Prism Central).
 
 # --- VMs à déployer -------------------------------------------------------------------
 
 variable "vms" {
   # La clé de la map est le NOM de la VM dans Nutanix ; la valeur décrit son gabarit.
   # Tous les champs sont optionnels sauf la clé : une VM déclarée avec `{}` utilisera
-  # les valeurs par défaut ci-dessous (2 vCPU, 8 Go de RAM, 20 Go de disque).
+  # les valeurs par défaut ci-dessous (2 vCPU, 8 Go de RAM, 40 Go de disque).
   #
   # Attention : renommer une clé n'est pas un renommage pour OpenTofu, mais une
   # destruction suivie d'une création. Le disque de l'ancienne VM sera perdu.
+  #
+  # Note sur disk_size_bytes : au clonage d'une image, l'API Nutanix ignore cette
+  # valeur et donne au disque la taille de l'image source. Un premier `tofu apply`
+  # crée donc la VM avec un disque à la taille de l'image ; un second `tofu apply`
+  # (sans rien changer) détecte l'écart et l'agrandit à la taille demandée ici.
   #
   # Exemple :
   #   vms = {
@@ -88,11 +91,10 @@ variable "vms" {
     num_cores_per_socket = optional(number, 2)
     num_sockets          = optional(number, 1)
     memory_size_bytes    = optional(number, 8589934592)  # 8 Go — la valeur doit être en OCTETS
-    disk_size_bytes      = optional(number, 21474836480) # 20 Go — idem
+    disk_size_bytes      = optional(number, 42949672960) # 40 Go — idem
     power_state          = optional(string, "ON")        # "ON" ou "OFF"
-    boot_order           = optional(list(string), ["NETWORK", "DISK", "CDROM"])
-    ssh_keys             = optional(list(string), []) # clés SSH autorisées pour cloud_init
-    cloud_init_user      = optional(string, "ubuntu") # utilisateur créé par cloud-init, avec sudo NOPASSWD
+    ssh_keys             = optional(list(string), [])    # clés SSH autorisées pour cloud_init
+    cloud_init_user      = optional(string, "ubuntu")    # utilisateur créé par cloud-init, avec sudo NOPASSWD
   }))
 
   default = {}

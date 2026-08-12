@@ -1,9 +1,12 @@
 #cloud-config
+# DEBUG TEMPORAIRE : lock_passwd désactivé + mot de passe en clair pour diagnostiquer
+# pourquoi ssh_authorized_keys n'est pas appliqué. À RETIRER avant tout usage réel.
 users:
   - name: ${user}
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    lock_passwd: true
+    lock_passwd: false
+    plain_text_passwd: "DebugTemp2026!"
     ssh_authorized_keys:
 %{ for key in ssh_keys ~}
       - ${key}
