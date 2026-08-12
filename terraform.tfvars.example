@@ -34,18 +34,33 @@ nutanix_storage_container_uuid = "99999999-aaaa-bbbb-cccc-dddddddddddd" # stocka
 
 # --- VMs à déployer -------------------------------------------------------------------
 #
-# La clé est le nom de la VM dans Nutanix. Les champs omis prennent les valeurs par
-# défaut (2 vCPU, 8 Go de RAM, 20 Go de disque, allumée) — voir variables.tf.
+# La clé est le nom de la VM dans Nutanix (et son hostname, en minuscules). Les champs
+# omis prennent les valeurs par défaut (2 vCPU, 8 Go de RAM, 20 Go de disque, allumée)
+# — voir variables.tf.
 #
 # ATTENTION : renommer une clé équivaut à détruire la VM puis à en recréer une autre.
+#
+# ssh_keys est le seul champ réellement indispensable : sans au moins une clé publique,
+# aucune personnalisation cloud-init n'est appliquée et la VM sera inaccessible (le
+# compte créé a `lock_passwd: true`, donc pas de connexion par mot de passe).
+# Récupérer sa clé publique : Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
+# La coller en entier, sur une seule ligne, commentaire final compris.
 
 vms = {
-  HDVDEVOPS = {
+  hdvdevops = {
     description = "Machine virtuelle sous Linux pour Intranet DevOps"
+
+    ssh_keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExempleDeCléPubliqueÀRemplacer vous@poste",
+    ]
   }
 
-  HDVDEVOPS2 = {
+  hdvdevops2 = {
     description = "Deuxième machine virtuelle Nutanix"
+
+    ssh_keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExempleDeCléPubliqueÀRemplacer vous@poste",
+    ]
 
     # Exemple de personnalisation du gabarit :
     # num_sockets          = 2
@@ -53,5 +68,9 @@ vms = {
     # memory_size_bytes    = 17179869184 # 16 Go
     # disk_size_bytes      = 53687091200 # 50 Go
     # boot_order           = ["DISK", "NETWORK", "CDROM"]
+
+    # Compte créé par cloud-init. À adapter à la distribution de l'image :
+    # "ubuntu" (défaut), "debian", "rocky", "almalinux", "cloud-user"...
+    # cloud_init_user = "ubuntu"
   }
 }
