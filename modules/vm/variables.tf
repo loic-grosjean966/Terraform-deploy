@@ -1,10 +1,13 @@
 # Paramètres d'entrée du module vm.
 #
-# Les valeurs par défaut définies ici s'appliquent si l'appelant ne passe rien. En
-# pratique, le main.tf racine passe toujours toutes les valeurs (issues de la map `vms`),
-# donc ce sont les défauts de la variable `vms` dans ../../variables.tf qui s'appliquent.
+# Descriptions volontairement brèves : la documentation de référence (valeurs attendues,
+# pièges, exemples) vit dans ../../variables.tf et dans le README. La dupliquer ici
+# garantissait de la voir diverger.
+#
+# Les défauts ci-dessous ne s'appliquent en pratique jamais : le main.tf racine passe
+# toujours toutes les valeurs, issues de la variable `vms`.
 
-# --- Identité -------------------------------------------------------------------------
+# --- Identité ---------------------------------------------------------------------------
 
 variable "name" {
   description = "Nom de la machine virtuelle"
@@ -16,25 +19,56 @@ variable "description" {
   type        = string
   default     = "Machine virtuelle Nutanix"
 }
-# --- Connexion via SSH -------------------------------------------------------------------
+
+# --- Accès ------------------------------------------------------------------------------
+# Voir README, section "Modèle d'accès".
+
 variable "ssh_keys" {
-  description = "Liste des clés SSH autorisées pour se connecter à la VM"
+  description = "Clés publiques SSH autorisées sur le compte cloud_init_user"
   type        = list(string)
   default     = []
 }
-# --- Cloud-init ---------------------------------------------------------------------
+
 variable "cloud_init_user" {
   description = "Nom de l'utilisateur créé par cloud-init"
   type        = string
   default     = "ubuntu"
 }
 
-variable "cloud_init_metadata" {
-  description = "Contenu du fichier cloud-init meta-data, en JSON strict (l'API Nutanix rejette le YAML ici). Vide = généré automatiquement depuis le nom de la VM."
+variable "break_glass_user" {
+  description = "Nom du compte de secours accessible en console"
+  type        = string
+  default     = "secours"
+}
+
+variable "break_glass_password_hash" {
+  description = "Hachage SHA-512 du mot de passe du compte de secours. Vide = pas de compte de secours."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "ad_domain" {
+  description = "Domaine Active Directory. Vide = pas de préparation AD. La jonction reste manuelle."
   type        = string
   default     = ""
 }
-# --- Gabarit (CPU / RAM / disque) -----------------------------------------------------
+
+variable "ad_admin_group" {
+  description = "Groupe AD recevant les droits sudo. Vide = aucun droit sudo via l'annuaire."
+  type        = string
+  default     = ""
+}
+
+# --- Cloud-init -------------------------------------------------------------------------
+
+variable "cloud_init_metadata" {
+  description = "Meta-data cloud-init en JSON strict, au format OpenStack ConfigDrive. Vide = généré depuis le nom de la VM."
+  type        = string
+  default     = ""
+}
+
+# --- Gabarit (CPU / RAM / disque) --------------------------------------------------------
 
 variable "num_cores_per_socket" {
   description = "Nombre de cœurs par socket"
@@ -55,7 +89,7 @@ variable "memory_size_bytes" {
 }
 
 variable "disk_size_bytes" {
-  description = "Taille du disque système en octets. Doit être supérieure ou égale à la taille de l'image source."
+  description = "Taille du disque système en octets. Doit être ≥ à la taille de l'image source."
   type        = number
   default     = 21474836480 # 20 Go = 20 × 1024³
 }
@@ -66,7 +100,7 @@ variable "power_state" {
   default     = "ON"
 }
 
-# --- Références aux entités Nutanix existantes (UUID) ---------------------------------
+# --- Références aux entités Nutanix existantes (UUID) ------------------------------------
 
 variable "cluster_ext_id" {
   description = "UUID du cluster Nutanix"

@@ -64,6 +64,53 @@ variable "nutanix_subnet_uuid" {
 # systématiquement le disque dans le même conteneur que l'image source, sans que ce
 # soit configurable (confirmé côté API v2 et v3, et dans l'assistant de Prism Central).
 
+# --- Compte de secours ("break glass") ------------------------------------------------
+# Compte local créé sur toutes les VMs, utilisable uniquement depuis la console Prism.
+# Hachage vide = compte non créé. Voir README, section "Modèle d'accès".
+
+variable "break_glass_user" {
+  description = "Nom du compte de secours accessible en console. Sans effet si break_glass_password_hash est vide."
+  type        = string
+  default     = "secours"
+}
+
+variable "break_glass_password_hash" {
+  # Générer le hachage sans l'écrire dans l'historique shell : openssl passwd -6
+  # Le hachage est lisible via l'API Nutanix, donc cassable hors-ligne : mot de passe
+  # long et aléatoire, rotation régulière. Voir README pour le détail du compromis.
+  description = "Hachage SHA-512 du mot de passe du compte de secours (PAS le mot de passe en clair). Vide = pas de compte de secours."
+  type        = string
+  sensitive   = true
+  default     = ""
+
+  validation {
+    # Attrape l'erreur la plus probable : coller le mot de passe au lieu de son hachage.
+    condition     = var.break_glass_password_hash == "" || startswith(var.break_glass_password_hash, "$")
+    error_message = "break_glass_password_hash doit être un hachage crypt(3) (commençant par $6$ pour SHA-512), pas un mot de passe en clair. Le générer avec : openssl passwd -6"
+  }
+}
+
+# --- Intégration Active Directory -----------------------------------------------------
+# cloud-init ne fait que PRÉPARER la machine (paquets, sudo, homes) : la jonction au
+# domaine (`realm join`) reste une commande manuelle, à passer une fois après le premier
+# démarrage. Procédure et prérequis DNS/NTP dans le README, section "Modèle d'accès".
+
+variable "ad_domain" {
+  # Exemple : "lecreusot.priv"
+  description = "Domaine Active Directory auquel les VMs seront jointes. Vide = pas de préparation AD."
+  type        = string
+  default     = ""
+}
+
+variable "ad_admin_group" {
+  # Nom du groupe dans l'annuaire, sans le suffixe @domaine. Éviter les espaces : ils
+  # imposent un échappement `\_` que HCL refuse, et qu'il faut alors doubler
+  # ("Admins\\_Systeme"). Un groupe dédié sans espace évite le problème.
+  description = "Groupe AD recevant les droits sudo sur les VMs. Vide = aucun droit sudo accordé via l'annuaire."
+  type        = string
+  default     = ""
+}
+
 # --- VMs à déployer -------------------------------------------------------------------
 
 variable "vms" {

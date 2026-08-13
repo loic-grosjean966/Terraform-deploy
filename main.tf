@@ -30,4 +30,12 @@ module "vms" {
 
   ssh_keys        = each.value.ssh_keys
   cloud_init_user = each.value.cloud_init_user
+
+  # Volontairement global et non pris dans la map `vms` : le compte de secours relève
+  # d'une politique d'accès uniforme, pas du gabarit d'une VM particulière.
+  break_glass_user          = var.break_glass_user
+  break_glass_password_hash = var.break_glass_password_hash
+
+  ad_domain      = var.ad_domain
+  ad_admin_group = var.ad_admin_group
 }

@@ -33,6 +33,36 @@ nutanix_subnet_uuid  = "ffffffff-0000-1111-2222-333333333333" # subnet des VMs
 # Pas de nutanix_storage_container_uuid : au clonage d'une image, Nutanix place le
 # disque dans le même conteneur que l'image source, sans que ce soit configurable.
 
+# --- Compte de secours (optionnel) ----------------------------------------------------
+#
+# Compte local créé sur TOUTES les VMs, utilisable uniquement depuis la console Prism :
+# l'authentification par mot de passe reste désactivée côté SSH. Sert à réparer une VM
+# dont la clé ne fonctionne plus. Laisser le hachage vide n'en crée aucun.
+#
+# Générer le hachage — la saisie est masquée et n'entre pas dans l'historique shell :
+#     openssl passwd -6
+#
+# Ce hachage est lisible via l'API Nutanix, donc cassable hors-ligne : mot de passe long
+# et aléatoire, rotation régulière. Voir README, section "Modèle d'accès".
+
+# break_glass_user          = "secours"
+# break_glass_password_hash = "$6$RemplacerParLeHachageGénéré"
+
+# --- Intégration Active Directory (optionnel) -----------------------------------------
+#
+# Prépare les VMs à l'authentification par comptes de domaine (paquets realmd/sssd,
+# droits sudo au groupe, création des répertoires personnels).
+#
+# La jonction elle-même reste MANUELLE, une fois par VM après le premier démarrage :
+#     sudo realm join --user=<compte-de-jonction> EXEMPLE.PRIV
+#     sudo realm permit -g 'GG_Admins_Linux@exemple.priv'
+#
+# Éviter les espaces dans le nom du groupe : ils imposent un échappement `\_` que HCL
+# refuse, et qu'il faut alors doubler ("Admins\\_Systeme").
+
+# ad_domain      = "exemple.priv"
+# ad_admin_group = "GG_Admins_Linux"
+
 # --- VMs à déployer -------------------------------------------------------------------
 #
 # La clé est le nom de la VM dans Nutanix (et son hostname, en minuscules). Les champs
@@ -44,9 +74,10 @@ nutanix_subnet_uuid  = "ffffffff-0000-1111-2222-333333333333" # subnet des VMs
 #
 # ATTENTION : renommer une clé équivaut à détruire la VM puis à en recréer une autre.
 #
-# ssh_keys est le seul champ réellement indispensable : sans au moins une clé publique,
-# aucune personnalisation cloud-init n'est appliquée et la VM sera inaccessible (le
-# compte créé a `lock_passwd: true`, donc pas de connexion par mot de passe).
+# ssh_keys est le seul champ réellement indispensable : la personnalisation cloud-init
+# s'applique de toute façon (hostname, clavier, préparation AD), mais sans clé publique
+# la VM est inaccessible — le compte créé n'a pas de mot de passe. Seul un compte de
+# secours déclaré plus haut permettrait encore d'y entrer, par la console.
 # Récupérer sa clé publique : Get-Content $env:USERPROFILE\.ssh\id_ed25519.pub
 # La coller en entier, sur une seule ligne, commentaire final compris.
 

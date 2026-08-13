@@ -14,6 +14,9 @@ problème.
 - Rattachement des VMs à un subnet Nutanix existant
 - Personnalisation au premier démarrage via cloud-init : hostname, compte utilisateur et clés SSH
 - Démarrage UEFI, disque système cloné depuis une image Nutanix
+- Clavier AZERTY sur la console Prism
+- Compte de secours optionnel, accessible en console uniquement
+- Préparation optionnelle à l'intégration Active Directory (`realmd` / `sssd`)
 
 ## Structure du projet
 
@@ -90,6 +93,12 @@ La clé du dictionnaire (`"vm-01"`) sert à la fois de nom de VM dans Nutanix et
 | `nutanix_image_uuid` | UUID de l'image OS | — |
 | `nutanix_subnet_uuid` | UUID du subnet existant utilisé par les VMs | — |
 | `vms` | Map des VMs à créer | `{}` |
+| `break_glass_user` | Nom du compte de secours accessible en console | `"secours"` |
+| `break_glass_password_hash` | Hachage SHA-512 de son mot de passe. Vide = pas de compte | `""` |
+| `ad_domain` | Domaine AD à préparer. Vide = pas de préparation | `""` |
+| `ad_admin_group` | Groupe AD recevant les droits `sudo` | `""` |
+
+Les quatre dernières sont documentées dans la section [Modèle d'accès](#modèle-daccès).
 
 ### Paramètres par VM
 
@@ -120,9 +129,9 @@ Prism Central de remonter l'IP de la VM). Le hostname est dérivé du nom de la 
 
 Trois points à connaître :
 
-- **Sans `ssh_keys`, aucune personnalisation n'est appliquée** (les attributs cloud-init
-  restent `null`) : le compte ayant `lock_passwd: true`, une VM sans clé serait de toute
-  façon inaccessible. C'est donc le champ à ne pas oublier.
+- **Sans `ssh_keys`, la VM est inaccessible.** La personnalisation s'applique quand même
+  (hostname, clavier, préparation AD), mais le compte créé n'a pas de mot de passe : sans
+  clé publique, aucun moyen de s'y connecter — sauf à avoir défini un compte de secours.
 - **Cloud-init ne s'exécute qu'au premier démarrage.** Ajouter une clé dans la configuration
   ne la déploiera pas sur une VM existante, et en retirer une ne révoquera aucun accès. Pour
   gérer les accès dans la durée, il faut modifier `~/.ssh/authorized_keys` sur la VM, ou
@@ -133,6 +142,94 @@ Trois points à connaître :
 Si `package_update: true` est conservé dans le gabarit, les VMs doivent pouvoir joindre les
 dépôts de leur distribution au premier démarrage, faute de quoi cloud-init perdra plusieurs
 minutes sur cette étape (le reste de la configuration s'appliquera quand même).
+
+## Modèle d'accès
+
+Trois voies d'accès coexistent, avec des rôles distincts. Aucune ne remplace les autres.
+
+### 1. Clé SSH — l'accès nominal
+
+Les clés de `ssh_keys` sont déposées sur le compte `cloud_init_user`. C'est le seul accès
+réseau : `ssh_pwauth` n'est pas activé, donc l'image conserve son `PasswordAuthentication no`
+et aucun mot de passe ne vaut sur le réseau.
+
+Convention recommandée pour le commentaire de la clé : `utilisateur@poste`
+(ex. `lgrosjean@poste-windows`). Il répond à « qui, depuis quelle machine », ce qui est la
+question qu'on se pose en relisant un `authorized_keys` des mois plus tard. Une clé par
+poste permet de révoquer une machine sans casser les autres.
+
+> Le commentaire d'une clé est du texte libre, sans rôle dans l'authentification. Pour le
+> corriger sans régénérer la paire : `ssh-keygen -c -C "nouveau@commentaire" -f ~/.ssh/id_ed25519`
+
+### 2. Compte de secours — la porte dérobée physique
+
+Activé en renseignant `break_glass_password_hash`. Le compte n'a pas de clé SSH et le mot
+de passe ne fonctionne pas sur le réseau : il n'est utilisable **que depuis la console
+Prism**. Il sert à réparer une VM dont la clé ne fonctionne plus, sans passer par GRUB.
+
+```bash
+openssl passwd -6    # saisie masquée, n'apparaît pas dans l'historique
+```
+
+```hcl
+break_glass_password_hash = "$6$..."
+```
+
+Le compromis à accepter : ce hachage part dans le spec de la VM, **lisible via l'API v3 par
+tout compte ayant un droit de lecture sur Prism Central**, et donc cassable hors-ligne.
+Utiliser un mot de passe long et aléatoire, et le faire tourner. `sensitive = true` ne
+masque que les sorties de `tofu` — le state contient la valeur en clair.
+
+Alternative sans secret stocké : la console + GRUB (`e` au démarrage, ajouter
+`rw init=/bin/bash` à la ligne `linux`, `Ctrl+X`). Plus lente, impose un redémarrage, mais
+ne laisse aucun hachage dans l'API. Si les accès Prism Central sont largement distribués,
+c'est l'option la plus sûre.
+
+### 3. Active Directory — l'accès des agents
+
+Renseigner `ad_domain` et `ad_admin_group` fait installer `realmd`/`sssd`/`adcli` et
+déposer un fichier `sudoers.d` accordant les droits au **groupe** AD. Les arrivées et les
+départs se gèrent alors dans l'annuaire, sans jamais toucher à Terraform.
+
+**La jonction reste manuelle**, une fois par VM, après le premier démarrage :
+
+```bash
+sudo realm join --user=<compte-de-jonction> LECREUSOT.PRIV
+sudo realm permit -g 'GG_Admins_Linux@lecreusot.priv'
+```
+
+Elle n'est pas automatisée volontairement : `realm join` exige un identifiant de domaine,
+qui n'a rien à faire dans le user-data où il serait lisible via l'API Nutanix.
+
+Vérification : `realm list`, puis `id monagent@lecreusot.priv`.
+
+Par défaut, la connexion impose le nom complet (`monagent@lecreusot.priv`). Pour le nom
+court, passer `use_fully_qualified_names = False` dans `/etc/sssd/sssd.conf` et relancer
+`sssd`.
+
+**Les deux causes de la quasi-totalité des échecs de jonction :**
+
+| Prérequis | Vérification |
+| --- | --- |
+| La VM résout les enregistrements SRV du domaine | `resolvectl query --type=SRV _ldap._tcp.dc._msdcs.<domaine>` |
+| L'horloge dérive de moins de 5 minutes (Kerberos) | `timedatectl` |
+
+> **Conserver un accès local.** Si le contrôleur de domaine devient injoignable, `sssd`
+> n'authentifie plus que les comptes ayant déjà ouvert une session sur cette machine. Ne
+> supprimez ni la clé SSH du compte local, ni le compte de secours.
+
+### Limite commune
+
+Ces trois mécanismes sont appliqués par cloud-init, donc **au premier démarrage uniquement**.
+Ajouter la clé d'un collègue impose de recréer la VM :
+
+```powershell
+tofu apply '-replace=module.vms["nom-de-la-vm"].nutanix_virtual_machine.this'
+```
+
+C'est acceptable pour l'amorçage, pas pour la gestion courante des accès — d'où
+l'intégration AD, qui déporte cette gestion dans l'annuaire. À défaut, un outil de gestion
+de configuration (Ansible) permet de rejouer les comptes et les clés sans reconstruire.
 
 ## Déploiement
 
@@ -167,6 +264,66 @@ décodez la valeur `user_data` affichée par `tofu plan` :
 
 Le YAML doit s'afficher sur plusieurs lignes. S'il apparaît sur une seule ligne avec des
 `\n` littéraux, cloud-init l'ignorera silencieusement.
+
+## Choix techniques
+
+Décisions non évidentes du code, avec le problème qu'elles résolvent. Les commentaires
+dans les fichiers `.tf` renvoient ici plutôt que de répéter ces explications.
+
+### `meta_data` au format OpenStack ConfigDrive, et non NoCloud
+
+C'est le piège le plus coûteux de ce projet. AHV génère une ISO labellisée `config-2`, au
+format **OpenStack ConfigDrive v2** (`openstack/latest/meta_data.json`). cloud-init y
+attend les clés `uuid` et `hostname`, qu'il recopie vers `instance-id` et `local-hostname`.
+
+Les clés NoCloud (`instance-id`, `local-hostname`), pourtant les plus documentées en ligne,
+sont ignorées — et `uuid` étant **obligatoire**, son absence fait lever `BrokenMetadata`.
+Le datasource est alors rejeté, cloud-init retombe sur `DataSourceNone`, et **aucune**
+personnalisation n'est appliquée : ni hostname, ni compte, ni clé.
+
+Le symptôme est déroutant, parce que tout semble correct par ailleurs : la VM démarre, le
+config drive est bien présent dans le spec, le `user_data` décodé est un YAML valide. Seul
+le hostname resté à celui de l'image trahit le problème.
+
+`uuidv5("dns", nom)` rend l'UUID déterministe, pour que l'`instance-id` ne change pas d'un
+`apply` à l'autre — sinon cloud-init rejouerait ses modules « per instance » à chaque
+redéploiement.
+
+### API v3 plutôt que v4
+
+`nutanix_virtual_machine_v2` faisait échouer la création côté serveur (« Failed to perform
+the operation due to an internal error », à 100 % de progression), alors que Prism Central
+créait les mêmes VMs sans problème. Prism Central s'appuyant sur l'API v3, le module
+l'utilise directement. Conséquence : la mémoire et les disques se déclarent en **mébioctets**,
+là où l'API v2 attendait des octets.
+
+### Neutralisation des CRLF
+
+Le `replace(..., "\r\n", "\n")` du module protège des retours à la ligne Windows :
+cloud-init ignore silencieusement un user-data dont le YAML tient sur une seule ligne avec
+des `\n` littéraux.
+
+### Pas de `storage_config`
+
+Au clonage d'une image, Nutanix place le disque dans le conteneur de l'image source. En
+forcer un autre fait échouer la création — comportement confirmé sur les API v2 et v3 ainsi
+que dans l'assistant de Prism Central.
+
+### `packagekit` dans la liste des paquets AD
+
+Il n'est pas superflu : `realmd` s'en sert pour vérifier ses dépendances, et `realm join`
+échoue sans lui avec « Necessary packages are not installed ».
+
+### Erreurs YAML signalées par l'éditeur sur le gabarit
+
+Les messages du type `Plain value cannot start with directive indicator character %` sur
+`user-data.yaml.tftpl` sont des faux positifs : le linter YAML bute sur les directives
+`%{ if }` et `%{ for }` de `templatefile`. Le fichier n'est pas du YAML, mais un gabarit
+qui en produit. Pour contrôler le rendu réel :
+
+```bash
+echo 'templatefile("./modules/vm/templates/user-data.yaml.tftpl", { ... })' | tofu console
+```
 
 ## Intégration continue
 

@@ -1,17 +1,94 @@
 #cloud-config
-# DEBUG TEMPORAIRE : lock_passwd désactivé + mot de passe en clair pour diagnostiquer
-# pourquoi ssh_authorized_keys n'est pas appliqué. À RETIRER avant tout usage réel.
+# Configuration appliquée au PREMIER démarrage de chaque VM.
+#
+# Piloté par : cloud_init_user, ssh_keys, break_glass_* et ad_*.
+# Le raisonnement derrière ces choix est dans le README, section "Modèle d'accès".
+#
+# Les blocs marqués [AD] ne sont rendus que si ad_domain est renseigné. Ils sont éclatés
+# en trois endroits (write_files, packages, runcmd) : c'est le schéma cloud-config qui
+# l'impose, il regroupe par clé et non par fonctionnalité.
+#
+# Toute modification de ce fichier exige de RECRÉER la VM : cloud-init ne rejoue pas ses
+# modules "per instance", et Nutanix ne génère le config drive qu'à la création.
+
+hostname: ${hostname}
+manage_etc_hosts: true
+
+# --- Comptes ---------------------------------------------------------------------------
+
 users:
   - name: ${user}
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    lock_passwd: false
-    plain_text_passwd: "DebugTemp2026!"
+    # lock_passwd non défini : son défaut (true) laisse le compte sans mot de passe,
+    # donc accessible par clé uniquement.
     ssh_authorized_keys:
 %{ for key in ssh_keys ~}
       - ${key}
 %{ endfor ~}
+%{ if break_glass_password_hash != "" ~}
+
+  # Compte de secours, console uniquement. "passwd" attend le HACHAGE du mot de passe,
+  # jamais sa forme en clair.
+  - name: ${break_glass_user}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: "${break_glass_password_hash}"
+%{ endif ~}
+
+# ssh_pwauth non défini : l'image Ubuntu conserve son PasswordAuthentication no.
+
+# --- Console -----------------------------------------------------------------------------
+
+# Disposition clavier de la console Prism. Sans effet sur SSH, où c'est celle du poste
+# client qui s'applique.
+keyboard:
+  layout: fr
+  model: pc105
+%{ if ad_domain != "" && ad_admin_group != "" ~}
+
+# --- [AD] Droits sudo --------------------------------------------------------------------
+
+# Accordés à un groupe de l'annuaire et non à des comptes nommés : habiliter ou révoquer
+# un agent se fait alors dans l'AD, sans toucher à cette VM.
+write_files:
+  - path: /etc/sudoers.d/90-ad-admins
+    owner: "root:root"
+    permissions: "0440" # sudo ignore silencieusement tout fichier plus permissif
+    content: |
+      # % désigne un groupe. Sans NOPASSWD : la ressaisie du mot de passe de domaine
+      # laisse une trace exploitable dans les journaux.
+      %${ad_admin_group} ALL=(ALL) ALL
+%{ endif ~}
+
+# --- Paquets -----------------------------------------------------------------------------
 
 package_update: true
 packages:
-  - qemu-guest-agent
+  - qemu-guest-agent # permet à Prism Central de remonter l'IP de la VM
+  - console-setup    # applique /etc/default/keyboard à la console texte
+%{ if ad_domain != "" ~}
+  # [AD] packagekit n'est pas superflu : realmd s'en sert pour vérifier ses dépendances,
+  # et `realm join` échoue sans lui.
+  - realmd
+  - sssd
+  - sssd-tools
+  - adcli
+  - oddjob
+  - oddjob-mkhomedir
+  - packagekit
+  - libnss-sss
+  - libpam-sss
+%{ endif ~}
+
+# --- Commandes de fin --------------------------------------------------------------------
+
+runcmd:
+  # Le module keyboard s'exécute avant l'installation des paquets ci-dessus ; setupcon
+  # applique la disposition sans attendre le redémarrage suivant.
+  - [ setupcon, --save, --force ]
+%{ if ad_domain != "" ~}
+  # [AD] Crée le répertoire personnel à la première connexion d'un compte de domaine.
+  - [ pam-auth-update, --enable, mkhomedir ]
+%{ endif ~}

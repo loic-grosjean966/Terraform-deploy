@@ -1,31 +1,36 @@
-# Création d'une machine virtuelle Nutanix, via l'API v3 (ressource "classique",
-# nutanix_virtual_machine) plutôt que v2 (nutanix_virtual_machine_v2).
+# Création d'UNE machine virtuelle Nutanix via l'API v3 (`nutanix_virtual_machine`).
+# C'est le `for_each` du main.tf racine qui en crée plusieurs.
 #
-# Ce module crée UNE VM ; c'est le `for_each` du main.tf racine qui en crée plusieurs.
-#
-# Pourquoi v3 et pas v2 : avec nutanix_virtual_machine_v2, la tâche de création
-# échouait systématiquement côté serveur ("Failed to perform the operation due to an
-# internal error", 100% de progression), alors que la même VM se créait sans problème
-# depuis l'assistant de Prism Central. Prism Central s'appuie sur l'API v3, plus
-# mature ; cette ressource l'utilise directement.
+# Le choix de l'API v3 plutôt que v4, et les autres décisions non évidentes de ce fichier,
+# sont expliqués dans le README, section "Choix techniques".
 
 locals {
-  # L'API v3 attend la mémoire et la taille du disque en MEBIOCTETS (Mio), pas en
-  # octets — contrairement à l'API v2. La conversion se fait ici pour ne pas changer
-  # l'unité des variables exposées par ce module (cohérence avec terraform.tfvars).
+  # L'API v3 attend des MEBIOCTETS. Les variables du module restent en octets pour
+  # rester cohérentes avec terraform.tfvars.
   memory_size_mib = var.memory_size_bytes / 1024 / 1024
   disk_size_mib   = var.disk_size_bytes / 1024 / 1024
 
-  # Contrairement à l'API v2 (YAML ou JSON acceptés), l'API v3 exige du JSON strict
-  # pour ce champ : "Metadata is not in valid json format" sinon, à la création.
+  # Format OpenStack ConfigDrive v2, en JSON strict — pas du NoCloud, pas du YAML.
+  # "uuid" est obligatoire : sans elle, cloud-init rejette le datasource et n'applique
+  # RIEN. Voir README, section "Choix techniques".
   cloud_init_metadata = var.cloud_init_metadata != "" ? var.cloud_init_metadata : jsonencode({
-    "instance-id"    = var.name
-    "local-hostname" = lower(var.name)
+    # uuidv5 garde l'UUID stable d'un apply à l'autre : cloud-init ne rejoue donc pas
+    # ses modules "per instance" à chaque redéploiement.
+    "uuid"     = uuidv5("dns", lower(var.name))
+    "hostname" = lower(var.name)
+    "name"     = lower(var.name)
   })
 
+  # Le replace() neutralise les CRLF que Windows introduirait : cloud-init ignore
+  # silencieusement un user-data dont les retours à la ligne sont mal formés.
   cloud_init_user_data = replace(templatefile("${path.module}/templates/user-data.yaml.tftpl", {
-    user     = var.cloud_init_user
-    ssh_keys = var.ssh_keys
+    user                      = var.cloud_init_user
+    hostname                  = lower(var.name)
+    ssh_keys                  = var.ssh_keys
+    break_glass_user          = var.break_glass_user
+    break_glass_password_hash = var.break_glass_password_hash
+    ad_domain                 = var.ad_domain
+    ad_admin_group            = var.ad_admin_group
   }), "\r\n", "\n")
 }
 
@@ -35,43 +40,38 @@ resource "nutanix_virtual_machine" "this" {
 
   cluster_uuid = var.cluster_ext_id
 
-  # CPU total de la VM = num_sockets × num_vcpus_per_socket
+  # vCPU total = num_sockets × num_vcpus_per_socket
   num_sockets          = var.num_sockets
   num_vcpus_per_socket = var.num_cores_per_socket
   memory_size_mib      = local.memory_size_mib
 
-  # "ON" démarre la VM immédiatement après sa création.
-  # Passer une VM existante à "OFF" l'éteint sans la détruire.
+  # "OFF" sur une VM existante l'éteint sans la détruire.
   power_state = var.power_state
 
   boot_type = "UEFI"
 
   disk_list {
-    # Source du disque : clonage de l'image OS. Sans ce bloc, la VM démarrerait sur
-    # un disque vide.
+    # Clonage de l'image OS. Sans ce bloc, la VM démarrerait sur un disque vide.
     data_source_reference = {
       kind = "image"
       uuid = var.image_ext_id
     }
 
-    # disk_size_mib est ignoré par l'API lors d'un clonage : le disque prend la taille
-    # de l'image source au premier apply. Le déclarer ici permet à un second
-    # `tofu apply` de détecter l'écart et d'agrandir le disque à la taille voulue —
-    # c'est le comportement documenté du provider, pas une limitation de ce module.
+    # Au clonage, l'API donne d'abord au disque la taille de l'image source ; c'est un
+    # second apply qui détecte l'écart et l'agrandit. Voir README, tableau des paramètres.
     disk_size_mib = local.disk_size_mib
 
     device_properties {
       device_type = "DISK"
       disk_address = {
-        # disk_address est une map(string) : device_index doit être une chaîne.
+        # map(string) : device_index doit être une chaîne, pas un nombre.
         device_index = "0"
         adapter_type = "SCSI"
       }
     }
 
-    # Pas de storage_config ici, volontairement : au clonage d'une image, Nutanix
-    # place le disque dans le même conteneur que l'image source. Forcer un conteneur
-    # différent provoquait un échec de création (déjà observé avec la ressource v2).
+    # Pas de storage_config volontairement : au clonage, Nutanix impose le conteneur de
+    # l'image source, et en forcer un autre fait échouer la création.
   }
 
   # Carte réseau unique, rattachée au subnet fourni.
@@ -79,9 +79,8 @@ resource "nutanix_virtual_machine" "this" {
     subnet_uuid = var.subnet_ext_id
   }
 
-  # Personnalisation au premier boot via cloud-init. Sans clé SSH, ces attributs
-  # restent null : pas de config drive généré, la VM se crée sans personnalisation
-  # (elle serait de toute façon inaccessible : le compte créé a lock_passwd = true).
-  guest_customization_cloud_init_user_data = length(var.ssh_keys) > 0 ? base64encode(local.cloud_init_user_data) : null
-  guest_customization_cloud_init_meta_data = length(var.ssh_keys) > 0 ? base64encode(local.cloud_init_metadata) : null
+  # Personnalisation au premier démarrage. Toujours renseignée, même sans clé SSH :
+  # le hostname, le clavier et la préparation AD s'appliquent indépendamment.
+  guest_customization_cloud_init_user_data = base64encode(local.cloud_init_user_data)
+  guest_customization_cloud_init_meta_data = base64encode(local.cloud_init_metadata)
 }
