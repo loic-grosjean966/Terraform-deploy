@@ -8,6 +8,11 @@ création côté serveur sur ce cluster ("Failed to perform the operation due to
 error"), alors que Prism Central — qui s'appuie sur l'API v3 — crée les mêmes VMs sans
 problème.
 
+> **Première utilisation, ou un déploiement qui n'applique rien ?** La marche à suivre
+> complète et la table de diagnostic sont dans
+> [docs/recette-nutanix.md](docs/recette-nutanix.md). Ce README documente la configuration ;
+> la recette documente la procédure et les pièges.
+
 ## Fonctionnalités
 
 - Création de plusieurs VMs en parallèle via une map (`for_each`)
@@ -22,6 +27,8 @@ problème.
 
 ```text
 Terraform-deploy/
+├── docs/
+│   └── recette-nutanix.md        # Procédure de déploiement et diagnostic
 ├── modules/
 │   └── vm/                       # Module de création d'une VM
 │       ├── versions.tf           # Contraintes de providers
