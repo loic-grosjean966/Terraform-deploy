@@ -1,21 +1,224 @@
+# CI GitLab — Terraform-deploy (OpenTofu / Nutanix)
+# =============================================================================
+# Réécriture intégrale. Le fichier précédent :
+#   - déclarait les stages `plan`, `validate` et `apply` SANS aucun job derrière
+#     (le seul job réel, `init opentofu`, vivait dans un stage `init`) : la CI
+#     n'a jamais rien validé ;
+#   - posait les identifiants Prism Central EN DUR dans `variables:`
+#     (NUTANIX_USERNAME, NUTANIX_PASSWORD, NUTANIX_ENDPOINT,
+#     NUTANIX_CLUSTER_UUID). Même remplies de valeurs d'exemple, ces clés
+#     installaient l'habitude de chercher des identifiants dans le dépôt — et
+#     la première vraie valeur y serait restée pour toujours dans l'historique
+#     git. Elles sont supprimées : les identifiants viennent de variables CI
+#     masquées ET protégées, préfixées TF_VAR_ (CONVENTIONS-CICD.md §11).
+#
+# Repris de .github/workflows/terraform.yml avant sa suppression : la logique
+# fmt -> validate (sans backend, donc sans state) -> plan conditionnel, et le
+# refus assumé d'automatiser `apply`.
+#
+# AUCUN `apply` ici, et ce n'est pas un oubli : backend.tf déclare un backend
+# `local`. Un state écrit par un job CI vit dans le workspace du runner et
+# disparaît avec lui ; au passage suivant OpenTofu ne saurait plus quelles VMs
+# il gère et proposerait de tout recréer. Automatiser l'apply suppose d'abord
+# un backend distant (S3, PostgreSQL, ou le backend HTTP de GitLab), avec
+# verrouillage d'état. Tant que ce n'est pas fait, la CI s'arrête au plan
+# (CONVENTIONS §12).
+# =============================================================================
+
 stages:
-  - init
-  - plan
+  - lint
   - validate
-  - apply
+  - plan
 
 variables:
-  NUTANIX_USERNAME: "your_username"
-  NUTANIX_PASSWORD: "your_password"
-  NUTANIX_ENDPOINT: "https://your-nutanix-endpoint"
-  NUTANIX_CLUSTER_UUID: "your-cluster-uuid"
+  # Versions épinglées : une image `latest` ferait varier le comportement de
+  # `tofu fmt` d'un jour à l'autre sans changement de code.
+  TOFU_VERSION: "1.9.0"
+  IMAGE_TOFU: "ghcr.io/opentofu/opentofu:$TOFU_VERSION"
+  IMAGE_TRIVY: "aquasec/trivy:0.58.0"
+  # Supprime les invites interactives et allège les sorties.
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+  # Cache des providers : doit être sous $CI_PROJECT_DIR, seul emplacement que
+  # le cache GitLab sait reprendre d'un job à l'autre.
+  TF_PLUGIN_CACHE_DIR: "$CI_PROJECT_DIR/.terraform-plugin-cache"
+  GIT_DEPTH: "20"
 
-init opentofu:
-  stage: init
-  script:
-    - opentofu init
+workflow:
+  # Anti-doublon : pas de pipeline de branche quand une MR est ouverte.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "push"'
-      when: always
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+  auto_cancel:
+    on_new_commit: interruptible
+
+default:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+.tofu:
+  image:
+    name: $IMAGE_TOFU
+    # L'image a `tofu` pour point d'entrée : il faut le neutraliser pour que
+    # GitLab puisse y lancer un shell et enchaîner plusieurs commandes.
+    entrypoint: [""]
+  interruptible: true
+  needs: []
+
+# --- LINT -------------------------------------------------------------------
+
+tofu:fmt:
+  extends: .tofu
+  stage: lint
+  timeout: 10m
+  script:
+    # -diff : le log montre ce qu'il faut corriger, pas seulement le nom du
+    # fichier fautif.
+    - tofu fmt -check -recursive -diff
+
+iac:trivy-config:
+  stage: lint
+  image:
+    name: $IMAGE_TRIVY
+    entrypoint: [""]
+  interruptible: true
+  needs: []
+  timeout: 15m
+  # Première analyse statique d'IaC du dépôt : elle est non bloquante le temps
+  # de traiter (ou d'assumer) ce qu'elle remonte — `nutanix_insecure = true`
+  # par défaut, par exemple, est un choix documenté tant que Prism Central
+  # présente un certificat auto-signé. À passer bloquant ensuite.
+  allow_failure: true
+  variables:
+    TRIVY_CACHE_DIR: "$CI_PROJECT_DIR/.trivycache"
+  cache:
+    # Base de vulnérabilités : indépendante du code, donc clé fixe.
+    key: trivy-db
+    paths:
+      - .trivycache/
+  script:
+    - trivy --version
+    # Deux passages : le premier produit l'artefact sans faire échouer le job,
+    # le second donne le tableau lisible et le code de sortie. La base est déjà
+    # en cache local au second appel, il est quasi instantané.
+    - trivy config . --exit-code 0 --format json --output rapport-trivy-iac.json
+    - trivy config . --exit-code 1 --severity HIGH,CRITICAL --format table
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - rapport-trivy-iac.json
+
+# --- VALIDATE ---------------------------------------------------------------
+
+tofu:validate:
+  extends: .tofu
+  stage: validate
+  timeout: 15m
+  cache:
+    # Clé sur le lock file : les providers ne changent que lorsqu'il change.
+    key:
+      files:
+        - .terraform.lock.hcl
+    paths:
+      - .terraform-plugin-cache/
+  script:
+    # Le répertoire doit exister avant l'init, sinon TF_PLUGIN_CACHE_DIR est
+    # ignoré (et le provider Nutanix retéléchargé à chaque exécution).
+    - mkdir -p "$TF_PLUGIN_CACHE_DIR"
+    # -backend=false : aucune initialisation du backend, donc aucun state créé
+    # ni lu. C'est ce qui rend ce job exécutable sur un runner partagé, sans
+    # accès à Prism Central et sans risque de toucher à l'infrastructure.
+    - tofu init -backend=false -input=false
+    - tofu validate -no-color
+
+# --- PLAN -------------------------------------------------------------------
+# Choix assumé : le plan tourne sur le runner interne (`tags: [swarm]`), pas sur
+# un runner partagé gitlab.com. Prism Central est une adresse privée
+# (ex. 172.20.0.200) : depuis un runner partagé, le job ne ferait qu'attendre
+# un timeout réseau. Le runner interne, lui, est sur le cluster.
+#
+# Trois limites à connaître avant de lire son résultat :
+#   1. le runner interne est un executor `shell` (CONVENTIONS §8) : la clé
+#      `image:` y serait IGNORÉE et le job s'exécuterait à même le nœud. On
+#      passe donc explicitement par le CLI Docker — le compte gitlab-runner est
+#      membre du groupe docker — pour disposer de tofu sans rien installer sur
+#      le manager ;
+#   2. le backend est local : la CI n'a pas le state (il vit sur le poste qui
+#      lance les apply). Le plan est donc calculé à partir d'un état vide ;
+#   3. terraform.tfvars n'est pas versionné et `var.vms` vaut {} par défaut :
+#      aucune VM n'est décrite côté CI.
+# Autrement dit ce job vérifie que la configuration est cohérente et que les
+# identifiants ouvrent bien Prism Central. Il ne dit PAS ce qui va changer sur
+# l'infrastructure. D'où le `when: manual` : on le lance quand on en a besoin.
+#
+# Aucun `-out=tfplan` : un fichier de plan contient la valeur des variables en
+# clair, mot de passe Prism Central compris (c'est pourquoi .gitignore exclut
+# *tfplan*). Le publier en artefact GitLab reviendrait à divulguer le secret.
+
+tofu:plan:
+  stage: plan
+  tags:
+    - swarm
+  needs:
+    - job: tofu:validate
+      artifacts: false
+  timeout: 20m
+  interruptible: true
+  script:
+    - |
+      if [ -z "$TF_VAR_nutanix_endpoint" ] || [ -z "$TF_VAR_nutanix_username" ]; then
+        echo "Plan ignoré : les variables Nutanix ne sont pas disponibles dans ce job."
+        echo
+        echo "À créer dans Settings > CI/CD > Variables, MASQUÉES et PROTÉGÉES :"
+        echo "  TF_VAR_nutanix_username, TF_VAR_nutanix_password,"
+        echo "  TF_VAR_nutanix_endpoint (IP ou FQDN seul, sans https:// ni port),"
+        echo "  TF_VAR_nutanix_cluster_uuid, TF_VAR_nutanix_image_uuid,"
+        echo "  TF_VAR_nutanix_subnet_uuid"
+        echo
+        echo "Si elles existent déjà : une variable PROTÉGÉE n'est pas exposée"
+        echo "sur une branche non protégée — c'est le cas le plus fréquent ici."
+        exit 0
+      fi
+    # --user : sans lui, tofu écrit .terraform/ en root dans le workspace du
+    # runner shell, que gitlab-runner ne peut plus nettoyer au job suivant.
+    # Les TF_VAR_ sont passés par NOM (-e NOM, sans valeur) : docker reprend la
+    # valeur depuis l'environnement du job, rien n'apparaît dans le log.
+    - |
+      docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -e HOME=/tmp \
+        -e TF_IN_AUTOMATION \
+        -e TF_VAR_nutanix_username \
+        -e TF_VAR_nutanix_password \
+        -e TF_VAR_nutanix_endpoint \
+        -e TF_VAR_nutanix_port \
+        -e TF_VAR_nutanix_insecure \
+        -e TF_VAR_nutanix_cluster_uuid \
+        -e TF_VAR_nutanix_image_uuid \
+        -e TF_VAR_nutanix_subnet_uuid \
+        -v "$CI_PROJECT_DIR:/src" \
+        -w /src \
+        --entrypoint /bin/sh \
+        "$IMAGE_TOFU" \
+        -c 'tofu init -input=false && tofu plan -input=false -no-color'
+  # `when` et `allow_failure` sont portés par les règles, pas par le job : une
+  # règle qui matche sans `when` explicite retombe sur `on_success` et écraserait
+  # un `when: manual` déclaré au niveau du job.
+  # allow_failure : un plan qui échoue (runner interne éteint, Prism Central
+  # injoignable) ne doit pas rendre rouge un pipeline dont fmt et validate sont
+  # passés.
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true
